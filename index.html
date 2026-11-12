@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Buscá tu mesa</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="estilos.css">
+<style>
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .papel { text-align: center; }
+  .papel h2 { font-size: 26px; margin-bottom: 4px; }
+  .ayuda { color: var(--ink-soft); margin: 0 0 16px; font-style: italic; }
+  #buscar { width: 100%; font-size: 20px; padding: 12px 14px; text-align: center; }
+  #resultados { margin-top: 20px; display: flex; flex-direction: column; gap: 14px; text-align: left; }
+  .resultado { border-top: 1px solid var(--line); padding-top: 14px; }
+  .resultado .nombre { font-size: 20px; }
+  .resultado .mesa { font-family: var(--display); font-size: 30px; color: var(--accent); line-height: 1.1; }
+  .resultado .companeros { color: var(--ink-soft); font-size: 16px; margin-top: 6px; }
+  .sin-mesa .mesa { font-size: 20px; color: var(--ink-soft); }
+  .vacio { color: var(--ink-soft); text-align: center; }
+  mark { background: var(--paper-deep); color: inherit; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="encabezado">
+    <h1 id="titulo">Buscá tu mesa</h1>
+    <p id="subtitulo"></p>
+  </header>
+  <main class="papel">
+    <h2>¿Dónde me siento?</h2>
+    <p class="ayuda">Escribí tu nombre o apellido</p>
+    <input id="buscar" type="search" autocomplete="off" placeholder="Ej: Pérez" aria-label="Tu nombre">
+    <div id="resultados" aria-live="polite"></div>
+  </main>
+</div>
+
+<script src="datos.js"></script>
+<script>
+  const datos = window.DATOS_MESAS || { evento: {}, mesas: [], invitados: [] };
+  const mesas = new Map(datos.mesas.map(m => [m.id, m]));
+
+  if (datos.evento?.titulo) document.getElementById('titulo').textContent = datos.evento.titulo;
+  if (datos.evento?.subtitulo) document.getElementById('subtitulo').textContent = datos.evento.subtitulo;
+
+  const normalizar = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  const escapar = s => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  const entrada = document.getElementById('buscar');
+  const salida = document.getElementById('resultados');
+
+  function buscar() {
+    const q = normalizar(entrada.value);
+    salida.innerHTML = '';
+    if (q.length < 2) return;
+    const palabras = q.split(/\s+/);
+    const hallados = datos.invitados
+      .filter(i => { const n = normalizar(i.nombre); return palabras.every(p => n.includes(p)); })
+      .slice(0, 20);
+
+    if (!hallados.length) {
+      salida.innerHTML = '<p class="vacio">No encontramos ese nombre. Probá solo con el apellido.</p>';
+      return;
+    }
+    for (const inv of hallados) {
+      const mesa = mesas.get(inv.mesa);
+      const div = document.createElement('div');
+      div.className = 'resultado' + (mesa ? '' : ' sin-mesa');
+      let html = `<div class="nombre">${escapar(inv.nombre)}</div>`;
+      if (mesa) {
+        const otros = datos.invitados.filter(o => o.mesa === mesa.id && o.id !== inv.id).map(o => escapar(o.nombre));
+        html += `<div class="mesa">${escapar(mesa.nombre)}</div>`;
+        if (otros.length) html += `<div class="companeros">Compartís mesa con: ${otros.join(', ')}</div>`;
+      } else {
+        html += `<div class="mesa">Todavía sin mesa asignada</div>`;
+      }
+      div.innerHTML = html;
+      salida.appendChild(div);
+    }
+  }
+  entrada.addEventListener('input', buscar);
+</script>
+</body>
+</html>

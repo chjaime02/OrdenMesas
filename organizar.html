@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orden de Mesas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="estilos.css">
+<style>
+  body { font-size: 16px; }
+  .wrap { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+  .barra { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .barra .resumen { margin-right: auto; color: var(--ink-soft); }
+  .formularios { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+  .formularios h2, .tablero h2 { font-size: 22px; margin-bottom: 10px; }
+  .fila { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .fila > input, .fila > textarea { flex: 1 1 140px; }
+  .fila input[type=number] { flex: 0 0 90px; }
+  textarea { width: 100%; resize: vertical; }
+  label.campo { display: flex; flex-direction: column; gap: 4px; flex: 1 1 200px; color: var(--ink-soft); font-size: 14px; }
+  label.campo input { color: var(--ink); font-size: 16px; }
+
+  .tablero { display: grid; grid-template-columns: 300px 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 760px) { .tablero { grid-template-columns: 1fr; } }
+  .pendientes { position: sticky; top: 12px; max-height: calc(100vh - 24px); display: flex; flex-direction: column; }
+  @media (max-width: 760px) { .pendientes { position: static; max-height: none; } }
+  .pendientes input[type=search] { width: 100%; margin-bottom: 10px; }
+  .lista { list-style: none; margin: 0; padding: 0; overflow-y: auto; min-height: 60px; }
+
+  .mesas { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; }
+  .mesa { background: var(--paper); border: 1px solid var(--paper-edge); box-shadow: 0 10px 22px rgba(0,0,0,0.4); padding: 14px; display: flex; flex-direction: column; }
+  .mesa header { display: flex; align-items: baseline; gap: 8px; border-bottom: 1px solid var(--line); padding-bottom: 6px; margin-bottom: 8px; }
+  .mesa h3 { font-size: 20px; flex: 1; cursor: text; }
+  .mesa .cupo { font-size: 14px; color: var(--ink-soft); white-space: nowrap; }
+  .mesa.llena .cupo { color: var(--ok); }
+  .mesa.excedida .cupo { color: var(--warn); font-weight: bold; }
+  .mesa.excedida { border-color: var(--warn); }
+  .mesa .acciones { display: flex; gap: 6px; margin-top: 8px; }
+  .mesa .acciones button { padding: 2px 8px; font-size: 14px; }
+
+  .invitado { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-bottom: 1px dotted var(--paper-edge); cursor: grab; background: var(--paper); }
+  .invitado .n { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .invitado .g { font-size: 13px; color: var(--ink-soft); font-style: italic; }
+  .invitado select { font-size: 14px; padding: 2px 4px; max-width: 110px; }
+  .invitado button { padding: 0 7px; font-size: 14px; line-height: 1.6; }
+  .invitado.arrastrando { opacity: 0.4; }
+  .destino-activo { outline: 2px dashed var(--accent); outline-offset: 2px; }
+  .nota { color: var(--ink-soft); font-size: 14px; font-style: italic; margin: 6px 0 0; }
+
+  @media print {
+    body { background: #fff; padding: 0; }
+    .no-imprimir, .pendientes, .formularios { display: none !important; }
+    .tablero { grid-template-columns: 1fr; }
+    .mesa { box-shadow: none; break-inside: avoid; }
+    .invitado select, .invitado button, .mesa .acciones { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="encabezado">
+    <h1>Orden de Mesas</h1>
+    <p id="subEncabezado"></p>
+  </header>
+
+  <section class="papel barra no-imprimir">
+    <span class="resumen" id="resumen"></span>
+    <button type="button" id="btnPublicar" title="Genera el archivo que usa el buscador (index.html)">Descargar datos.js</button>
+    <button type="button" class="secundario" id="btnExportar">Copia de seguridad</button>
+    <button type="button" class="secundario" id="btnImportar">Importar copia</button>
+    <input type="file" id="archivoImportar" accept=".json,application/json" class="oculto">
+    <button type="button" class="secundario" onclick="window.print()">Imprimir</button>
+    <a href="index.html" target="_blank"><button type="button" class="secundario">Ver buscador</button></a>
+    <button type="button" class="secundario peligro" id="btnBorrarTodo">Borrar todo</button>
+  </section>
+
+  <section class="formularios no-imprimir">
+    <div class="papel">
+      <h2>Evento</h2>
+      <div class="fila">
+        <label class="campo">Título<input type="text" id="evTitulo"></label>
+      </div>
+      <div class="fila">
+        <label class="campo">Subtítulo<input type="text" id="evSubtitulo"></label>
+      </div>
+    </div>
+
+    <div class="papel">
+      <h2>Mesas</h2>
+      <form class="fila" id="formMesa">
+        <input type="text" id="mesaNombre" placeholder="Nombre (ej: Mesa 1, Novios)" aria-label="Nombre de la mesa">
+        <input type="number" id="mesaCapacidad" min="1" value="10" aria-label="Capacidad">
+        <button type="submit">Agregar</button>
+      </form>
+      <form class="fila" id="formVariasMesas">
+        <input type="number" id="cantMesas" min="1" value="10" aria-label="Cantidad de mesas">
+        <button type="submit" class="secundario">Crear varias numeradas</button>
+      </form>
+    </div>
+
+    <div class="papel">
+      <h2>Invitados</h2>
+      <form id="formInvitados">
+        <textarea id="invNombres" rows="4" placeholder="Un nombre por línea&#10;Ej:&#10;Juan Pérez&#10;María Gómez"></textarea>
+        <div class="fila" style="margin-top:8px">
+          <input type="text" id="invGrupo" placeholder="Grupo (opcional: Familia novia, Amigos…)" aria-label="Grupo">
+          <button type="submit">Agregar</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="tablero">
+    <aside class="papel pendientes" id="zonaPendientes">
+      <h2>Sin mesa <span id="cuentaPendientes" class="cupo"></span></h2>
+      <input type="search" id="filtro" placeholder="Filtrar…" aria-label="Filtrar invitados sin mesa">
+      <ul class="lista" id="listaPendientes"></ul>
+      <p class="nota">Arrastrá un invitado a una mesa o elegila en el menú.</p>
+    </aside>
+    <div class="mesas" id="mesas"></div>
+  </section>
+</div>
+
+<script src="datos.js"></script>
+<script>
+  const CLAVE = 'ordenMesas.v1';
+  const $ = id => document.getElementById(id);
+  const uid = () => Math.random().toString(36).slice(2, 10);
+  const normalizar = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+
+  let estado = cargar();
+
+  function cargar() {
+    try {
+      const guardado = localStorage.getItem(CLAVE);
+      if (guardado) return JSON.parse(guardado);
+    } catch (e) {}
+    const base = window.DATOS_MESAS || {};
+    return {
+      evento: { titulo: '', subtitulo: '', ...(base.evento || {}) },
+      mesas: base.mesas || [],
+      invitados: base.invitados || []
+    };
+  }
+  function guardar() {
+    try { localStorage.setItem(CLAVE, JSON.stringify(estado)); } catch (e) {}
+    render();
+  }
+
+  // ---------- Render ----------
+  function render() {
+    const { mesas, invitados, evento } = estado;
+    $('subEncabezado').textContent = [evento.titulo, evento.subtitulo].filter(Boolean).join(' · ');
+    if (document.activeElement !== $('evTitulo')) $('evTitulo').value = evento.titulo || '';
+    if (document.activeElement !== $('evSubtitulo')) $('evSubtitulo').value = evento.subtitulo || '';
+
+    const pendientes = invitados.filter(i => !mesas.some(m => m.id === i.mesa));
+    const capacidad = mesas.reduce((s, m) => s + (+m.capacidad || 0), 0);
+    $('resumen').textContent = `${invitados.length} invitados · ${invitados.length - pendientes.length} ubicados · ${mesas.length} mesas · ${capacidad} lugares`;
+    $('cuentaPendientes').textContent = `(${pendientes.length})`;
+
+    // Sin mesa
+    const q = normalizar($('filtro').value);
+    const lista = $('listaPendientes');
+    lista.innerHTML = '';
+    pendientes
+      .filter(i => !q || normalizar(i.nombre + ' ' + (i.grupo || '')).includes(q))
+      .sort((a, b) => (a.grupo || '').localeCompare(b.grupo || '') || a.nombre.localeCompare(b.nombre))
+      .forEach(i => lista.appendChild(itemInvitado(i, true)));
+
+    // Mesas
+    const cont = $('mesas');
+    cont.innerHTML = '';
+    for (const m of mesas) {
+      const sentados = invitados.filter(i => i.mesa === m.id);
+      const card = document.createElement('article');
+      card.className = 'mesa';
+      if (sentados.length > m.capacidad) card.classList.add('excedida');
+      else if (sentados.length === +m.capacidad) card.classList.add('llena');
+      card.innerHTML = `<header><h3 title="Clic para renombrar"></h3><span class="cupo">${sentados.length} / ${m.capacidad}</span></header><ul class="lista"></ul>
+        <div class="acciones"><button type="button" class="secundario" data-a="cap">Capacidad</button><button type="button" class="secundario peligro" data-a="borrar">Eliminar</button></div>`;
+      card.querySelector('h3').textContent = m.nombre;
+      card.querySelector('h3').onclick = () => {
+        const n = prompt('Nombre de la mesa', m.nombre);
+        if (n && n.trim()) { m.nombre = n.trim(); guardar(); }
+      };
+      card.querySelector('[data-a=cap]').onclick = () => {
+        const c = parseInt(prompt('Capacidad de la mesa', m.capacidad), 10);
+        if (c > 0) { m.capacidad = c; guardar(); }
+      };
+      card.querySelector('[data-a=borrar]').onclick = () => {
+        if (!confirm(`¿Eliminar "${m.nombre}"? Sus invitados vuelven a "Sin mesa".`)) return;
+        estado.mesas = mesas.filter(x => x.id !== m.id);
+        invitados.forEach(i => { if (i.mesa === m.id) i.mesa = null; });
+        guardar();
+      };
+      const ul = card.querySelector('ul');
+      sentados.sort((a, b) => a.nombre.localeCompare(b.nombre)).forEach(i => ul.appendChild(itemInvitado(i, false)));
+      hacerDestino(card, m.id);
+      cont.appendChild(card);
+    }
+    if (!mesas.length) cont.innerHTML = '<div class="papel nota">Todavía no hay mesas. Creá algunas arriba.</div>';
+  }
+
+  function itemInvitado(inv, pendiente) {
+    const li = document.createElement('li');
+    li.className = 'invitado';
+    li.draggable = true;
+    li.innerHTML = `<span class="n"></span>`;
+    li.querySelector('.n').textContent = inv.nombre;
+    if (inv.grupo) {
+      const g = document.createElement('span');
+      g.className = 'g'; g.textContent = inv.grupo;
+      li.querySelector('.n').append(' ', g);
+    }
+    li.querySelector('.n').ondblclick = () => {
+      const n = prompt('Nombre del invitado', inv.nombre);
+      if (n && n.trim()) { inv.nombre = n.trim(); guardar(); }
+    };
+
+    if (pendiente) {
+      const sel = document.createElement('select');
+      sel.setAttribute('aria-label', `Mesa para ${inv.nombre}`);
+      sel.innerHTML = '<option value="">Mesa…</option>' + estado.mesas.map(m => {
+        const ocupados = estado.invitados.filter(i => i.mesa === m.id).length;
+        return `<option value="${m.id}">${m.nombre.replace(/</g, '&lt;')} (${ocupados}/${m.capacidad})</option>`;
+      }).join('');
+      sel.onchange = () => { inv.mesa = sel.value || null; guardar(); };
+      li.appendChild(sel);
+      const del = document.createElement('button');
+      del.type = 'button'; del.className = 'secundario peligro'; del.textContent = '🗑'; del.title = 'Eliminar invitado';
+      del.onclick = () => {
+        if (!confirm(`¿Eliminar a ${inv.nombre}?`)) return;
+        estado.invitados = estado.invitados.filter(i => i.id !== inv.id); guardar();
+      };
+      li.appendChild(del);
+    } else {
+      const quitar = document.createElement('button');
+      quitar.type = 'button'; quitar.className = 'secundario'; quitar.textContent = '×'; quitar.title = 'Sacar de la mesa';
+      quitar.onclick = () => { inv.mesa = null; guardar(); };
+      li.appendChild(quitar);
+    }
+
+    li.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', inv.id); li.classList.add('arrastrando'); });
+    li.addEventListener('dragend', () => li.classList.remove('arrastrando'));
+    return li;
+  }
+
+  function hacerDestino(el, mesaId) {
+    el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('destino-activo'); });
+    el.addEventListener('dragleave', e => { if (!el.contains(e.relatedTarget)) el.classList.remove('destino-activo'); });
+    el.addEventListener('drop', e => {
+      e.preventDefault(); el.classList.remove('destino-activo');
+      const inv = estado.invitados.find(i => i.id === e.dataTransfer.getData('text/plain'));
+      if (inv && inv.mesa !== mesaId) { inv.mesa = mesaId; guardar(); }
+    });
+  }
+  hacerDestino($('zonaPendientes'), null);
+
+  // ---------- Formularios ----------
+  $('evTitulo').oninput = e => { estado.evento.titulo = e.target.value; guardar(); };
+  $('evSubtitulo').oninput = e => { estado.evento.subtitulo = e.target.value; guardar(); };
+  $('filtro').oninput = render;
+
+  $('formMesa').onsubmit = e => {
+    e.preventDefault();
+    const nombre = $('mesaNombre').value.trim() || `Mesa ${estado.mesas.length + 1}`;
+    estado.mesas.push({ id: uid(), nombre, capacidad: parseInt($('mesaCapacidad').value, 10) || 10 });
+    $('mesaNombre').value = '';
+    guardar();
+  };
+  $('formVariasMesas').onsubmit = e => {
+    e.preventDefault();
+    const n = parseInt($('cantMesas').value, 10) || 0;
+    const cap = parseInt($('mesaCapacidad').value, 10) || 10;
+    const inicio = estado.mesas.length;
+    for (let k = 1; k <= n; k++) estado.mesas.push({ id: uid(), nombre: `Mesa ${inicio + k}`, capacidad: cap });
+    guardar();
+  };
+  $('formInvitados').onsubmit = e => {
+    e.preventDefault();
+    const grupo = $('invGrupo').value.trim();
+    const existentes = new Set(estado.invitados.map(i => normalizar(i.nombre)));
+    const nombres = $('invNombres').value.split('\n').map(s => s.trim()).filter(Boolean);
+    const repetidos = [];
+    for (const nombre of nombres) {
+      if (existentes.has(normalizar(nombre))) { repetidos.push(nombre); continue; }
+      existentes.add(normalizar(nombre));
+      estado.invitados.push({ id: uid(), nombre, grupo, mesa: null });
+    }
+    $('invNombres').value = '';
+    guardar();
+    if (repetidos.length) alert('Ya estaban cargados y no se repitieron:\n' + repetidos.join('\n'));
+  };
+
+  // ---------- Archivos ----------
+  function descargar(nombre, contenido, tipo) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([contenido], { type: tipo }));
+    a.download = nombre;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  $('btnPublicar').onclick = () => {
+    const js = '// Datos publicados para el buscador (index.html).\n'
+      + '// Este archivo se genera desde organizar.html con el botón "Descargar datos.js".\n'
+      + 'window.DATOS_MESAS = ' + JSON.stringify(estado, null, 2) + ';\n';
+    descargar('datos.js', js, 'text/javascript');
+    alert('Reemplazá el archivo datos.js de la carpeta OrdenMesas por el que se acaba de descargar para que el buscador muestre las mesas.');
+  };
+  $('btnExportar').onclick = () => {
+    const fecha = new Date().toISOString().slice(0, 10);
+    descargar(`orden-mesas-${fecha}.json`, JSON.stringify(estado, null, 2), 'application/json');
+  };
+  $('btnImportar').onclick = () => $('archivoImportar').click();
+  $('archivoImportar').onchange = async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    try {
+      const d = JSON.parse(await f.text());
+      if (!Array.isArray(d.mesas) || !Array.isArray(d.invitados)) throw new Error('formato');
+      if (!confirm('Esto reemplaza todo lo cargado por la copia. ¿Seguir?')) return;
+      estado = { evento: d.evento || { titulo: '', subtitulo: '' }, mesas: d.mesas, invitados: d.invitados };
+      guardar();
+    } catch (err) {
+      alert('El archivo no es una copia válida de Orden de Mesas.');
+    } finally { e.target.value = ''; }
+  };
+  $('btnBorrarTodo').onclick = () => {
+    if (!confirm('¿Borrar todas las mesas e invitados? Conviene hacer una copia de seguridad antes.')) return;
+    estado = { evento: estado.evento, mesas: [], invitados: [] };
+    guardar();
+  };
+
+  render();
+</script>
+</body>
+</html>
